@@ -29,11 +29,7 @@ class NeuralFeatureEncoder(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
 
-        # --- THIS IS THE FIX ---
-        # The default config.max_position_embeddings is 512, which is too small
-        # for your data (e.g., 1382). We'll create a new, larger limit.
-        self.max_positions = 2048  # You can make this larger if needed
-        # --- END OF FIX ---
+        self.max_positions = 4096  
 
         # Linear layer to project 512 features to 768 (BERT's hidden size)
         self.projection = nn.Linear(input_features_dim, self.hidden_size)

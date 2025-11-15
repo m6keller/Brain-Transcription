@@ -12,7 +12,7 @@ from model import build_model
 from dataset import DataCollator, get_brain_dataset
 
 # --- Configuration ---
-DATA_ROOT = "/scratch/m6keller/brain-to-text"
+DATA_ROOT = "/home/mkeller/data/brain-to-text"
 MODEL_OUTPUT_DIR = "./brain_model_v1"
 NUM_EPOCHS = 5
 BATCH_SIZE = 8
