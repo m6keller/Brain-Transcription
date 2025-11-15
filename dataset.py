@@ -104,7 +104,6 @@ def get_brain_dataset(data_root, split, tokenizer):
     """
     print(f"Loading {split} data from {data_root}...")
 
-    # ---FIX 1: Updated pattern to match your ls output---
     pattern = os.path.join(
         data_root,
         "t15_copyTask_neuralData",

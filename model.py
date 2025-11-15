@@ -6,7 +6,6 @@ import numpy as np
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from torch.cuda.amp import GradScaler, autocast
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -31,17 +30,14 @@ class NeuralFeatureEncoder(nn.Module):
 
         self.max_positions = 4096  
 
-        # Linear layer to project 512 features to 768 (BERT's hidden size)
+        # Project 512 features to 768 (BERT's hidden size)
         self.projection = nn.Linear(input_features_dim, self.hidden_size)
 
-        # Use our new max_positions to create the embedding table
         self.position_embeddings = nn.Embedding(self.max_positions, self.hidden_size)
 
-        # Standard Transformer normalization and dropout
         self.LayerNorm = nn.LayerNorm(self.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-        # Register the buffer with the new max_positions
         self.register_buffer(
             "position_ids", torch.arange(self.max_positions).expand((1, -1))
         )
@@ -70,10 +66,9 @@ class NeuralFeatureEncoder(nn.Module):
         # 1. Project features from 512 -> 768
         projected_features = self.projection(inputs_embeds)
 
-        # 2. Add position embeddings
         seq_length = inputs_embeds.size(1)
 
-        # This will now slice from our (1, 2048) buffer and will no longer fail
+        # This will now slice from (1, 4096) buffer
         if position_ids is None:
             position_ids = self.position_ids[
                 :, past_key_values_length : seq_length + past_key_values_length
@@ -141,62 +136,53 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 1. Build model and tokenizer
     model, tokenizer = build_model()
     model.to(device)
 
-    # 2. Create Dummy Data
     DUMMY_H5_PATH = "./dummy_brain_data.h5"
 
     try:
         with h5py.File(DUMMY_H5_PATH, "w") as f:
             print("Creating dummy HDF5 file for example...")
-            for i in range(10):  # Create 10 dummy trials
+            for i in range(10):  
                 g = f.create_group(str(i))
-                seq_len = 50 + i * 5  # Variable sequence length
+                seq_len = 50 + i * 5 
 
                 # Neural data: (features, time) -> (512, T)
                 dummy_neural = np.random.rand(512, seq_len).astype(np.float32)
                 g.create_dataset("input_features", data=dummy_neural)
 
-                # Text label: as a bytes attribute
                 dummy_text = f"this is example sentence {i}"
                 g.attrs["sentence_label"] = np.bytes_(dummy_text)
 
         print("Dummy file created successfully.")
     except Exception as e:
         print(f"Could not create dummy file. {e}")
-        return  # Exit if we can't create the file
+        return 
 
-    # 3. Set up Dataset, Collator, and DataLoader
     dataset = H5BrainDataset(DUMMY_H5_PATH, tokenizer)
     data_collator = DataCollator(tokenizer)
 
-    # This now handles all the padding and batching!
     data_loader = DataLoader(
         dataset,
-        batch_size=4,  # You can change this
+        batch_size=4, 
         collate_fn=data_collator,
         shuffle=True,
     )
 
-    # 4. Set up optimizer
     optimizer = AdamW(model.parameters(), lr=5e-5)
 
     print("\n--- Starting Training Loop (Example) ---")
 
-    # 5. Run one training step
     model.train()
 
-    # Get one batch from the data_loader
-    # A real loop would be: `for batch in data_loader:`
+    # One forward/backward pass
     try:
         batch = next(iter(data_loader))
     except StopIteration:
         print("DataLoader is empty (this shouldn't happen).")
         return
 
-    # Move all tensors in the batch to the device
     inputs_embeds = batch["inputs_embeds"].to(device)
     attention_mask = batch["attention_mask"].to(device)
     labels = batch["labels"].to(device)
@@ -218,18 +204,15 @@ def main():
     print(f"\nForward Pass Successful!")
     print(f"Batch Loss: {loss.item()}")
 
-    # 6. Backward pass
     loss.backward()
     optimizer.step()
 
     print("Backward pass (training step) successful!")
 
-    # 7. Generation (Inference)
     print("\n--- Starting Generation (Example) ---")
     model.eval()
     with torch.no_grad():
         # Use the same batch's inputs_embeds and attention_mask
-        # for this generation example
         generated_ids = model.generate(
             inputs_embeds=inputs_embeds, attention_mask=attention_mask, max_length=50
         )
@@ -240,7 +223,6 @@ def main():
         print(f"Generated text (from 1st item in batch):")
         print(f"-> {decoded_text}")
 
-    # 8. Clean up
     dataset.close()
     if "DUMMY_H5_PATH" in locals() and "dummy" in DUMMY_H5_PATH:
         os.remove(DUMMY_H5_PATH)

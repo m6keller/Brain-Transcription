@@ -27,12 +27,10 @@ def run_validation(model, val_loader, device):
 
     with torch.no_grad():
         for batch in tqdm(val_loader, desc="Validation", leave=False):
-            # Move batch to device
             inputs_embeds = batch["inputs_embeds"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
 
-            # Forward pass
             outputs = model(
                 inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
@@ -50,23 +48,19 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 1. Build Model and Tokenizer
     model, tokenizer = build_model()
     model.to(device)
 
-    # 2. Create DataCollator
     data_collator = DataCollator(tokenizer=tokenizer)
 
-    # 3. Load Datasets (This is now much simpler)
     try:
         train_dataset = get_brain_dataset(DATA_ROOT, "train", tokenizer)
     except FileNotFoundError as e:
         print(e)
-        return  # Exit if no training data
+        return  
 
     val_dataset = get_brain_dataset(DATA_ROOT, "val", tokenizer)
 
-    # 4. Create DataLoaders
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, collate_fn=data_collator, shuffle=True
     )
@@ -75,7 +69,7 @@ def train():
     if val_dataset:
         val_loader = DataLoader(
             val_dataset,
-            batch_size=BATCH_SIZE * 2,  # Use larger batch size for val
+            batch_size=BATCH_SIZE * 2,  
             collate_fn=data_collator,
             shuffle=False,
         )
@@ -83,7 +77,6 @@ def train():
 
     print(f"Total training steps per epoch: {len(train_loader)}")
 
-    # 5. Set up Optimizer and Scheduler
     optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
     num_training_steps = NUM_EPOCHS * len(train_loader)
     lr_scheduler = get_scheduler(
@@ -93,17 +86,14 @@ def train():
         num_training_steps=num_training_steps,
     )
 
-    # 6. Training Loop
     best_val_loss = float("inf")
     training_stats = []
 
-    # Ensure output directory exists
     os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True)
 
     for epoch in range(NUM_EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} ---")
 
-        # --- Training ---
         model.train()
         total_train_loss = 0
 
@@ -145,7 +135,6 @@ def train():
             avg_val_loss = -1.0  # No validation
             print(f"Epoch {epoch+1}: Train Loss = {avg_train_loss:.4f} (No validation)")
 
-        # Save stats
         stats = {
             "epoch": epoch + 1,
             "train_loss": avg_train_loss,
@@ -153,19 +142,16 @@ def train():
         }
         training_stats.append(stats)
 
-        # --- Save Best Model ---
         if val_loader and avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             print("New best val loss. Saving model...")
             model.save_pretrained(MODEL_OUTPUT_DIR)
             tokenizer.save_pretrained(MODEL_OUTPUT_DIR)
         elif not val_loader:
-            # If no validation, just save the model every epoch
             print("Saving model checkpoint...")
             model.save_pretrained(MODEL_OUTPUT_DIR)
             tokenizer.save_pretrained(MODEL_OUTPUT_DIR)
 
-        # Save stats to a file
         with open(os.path.join(MODEL_OUTPUT_DIR, "training_stats.json"), "w") as f:
             json.dump(training_stats, f, indent=2)
 
