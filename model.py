@@ -6,6 +6,7 @@ import numpy as np
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
+from torch.cuda.amp import GradScaler, autocast
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -19,7 +20,8 @@ from dataset import DataCollator, H5BrainDataset
 
 class NeuralFeatureEncoder(nn.Module):
     """
-    Process input neural features into embeddings suitable for BERT.
+    A custom encoder to process the 512-dim neural features.
+    This replaces the standard text 'embeddings' layer in BERT.
     """
 
     def __init__(self, config, input_features_dim=512):
@@ -27,20 +29,27 @@ class NeuralFeatureEncoder(nn.Module):
         self.config = config
         self.hidden_size = config.hidden_size
 
+        # --- THIS IS THE FIX ---
+        # The default config.max_position_embeddings is 512, which is too small
+        # for your data (e.g., 1382). We'll create a new, larger limit.
+        self.max_positions = 2048  # You can make this larger if needed
+        # --- END OF FIX ---
+
+        # Linear layer to project 512 features to 768 (BERT's hidden size)
         self.projection = nn.Linear(input_features_dim, self.hidden_size)
 
-        self.position_embeddings = nn.Embedding(
-            config.max_position_embeddings, self.hidden_size
-        )
+        # Use our new max_positions to create the embedding table
+        self.position_embeddings = nn.Embedding(self.max_positions, self.hidden_size)
 
+        # Standard Transformer normalization and dropout
         self.LayerNorm = nn.LayerNorm(self.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
+        # Register the buffer with the new max_positions
         self.register_buffer(
-            "position_ids", torch.arange(config.max_position_embeddings).expand((1, -1))
+            "position_ids", torch.arange(self.max_positions).expand((1, -1))
         )
 
-    # HACK: Must match BertEmbeddings.forward signature
     def forward(
         self,
         input_ids=None,
@@ -51,7 +60,6 @@ class NeuralFeatureEncoder(nn.Module):
     ):
         """
         This signature MUST match the base class (BertEmbeddings.forward).
-        - `input_ids` will be None (we pass `inputs_embeds` instead).
         - `inputs_embeds` will be our (batch, seq_len, 512) neural tensor.
         """
 
@@ -69,8 +77,8 @@ class NeuralFeatureEncoder(nn.Module):
         # 2. Add position embeddings
         seq_length = inputs_embeds.size(1)
 
+        # This will now slice from our (1, 2048) buffer and will no longer fail
         if position_ids is None:
-            # Create default position_ids
             position_ids = self.position_ids[
                 :, past_key_values_length : seq_length + past_key_values_length
             ]
@@ -78,12 +86,13 @@ class NeuralFeatureEncoder(nn.Module):
         pos_embeddings = self.position_embeddings(position_ids)
 
         # Combine projected features and position embeddings
+        # (batch, 1382, 768) + (1, 1382, 768) -> This now works!
         embeddings = projected_features + pos_embeddings
 
+        # 3. Apply LayerNorm and Dropout
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
 
-        # Return the final (batch, seq_len, 768) tensor
         return embeddings
 
 
