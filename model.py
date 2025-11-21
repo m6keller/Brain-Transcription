@@ -155,7 +155,7 @@ def build_model(state_dict_path: Path = None):
                 if "decoder.transformer.wte.weight" in state_dict:
                     state_dict["decoder.lm_head.weight"] = state_dict["decoder.transformer.wte.weight"]
 
-            keys = model.load_state_dict(state_dict, strict=True) 
+            model.load_state_dict(state_dict, strict=True) 
             print(f"Weights loaded")
         else:
             print(f"Warning: File {path_obj} does not exist. Skipping loading.")
