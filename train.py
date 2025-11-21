@@ -10,9 +10,9 @@ from tqdm.auto import tqdm
 from model import build_model
 
 from dataset import DataCollator, get_brain_dataset
+from utils import DATA_ROOT
 
 # --- Configuration ---
-DATA_ROOT = "/home/mkeller/data/brain-to-text"
 MODEL_OUTPUT_DIR = "./brain_model_v1"
 NUM_EPOCHS = 5
 BATCH_SIZE = 8
