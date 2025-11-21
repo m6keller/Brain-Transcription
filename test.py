@@ -62,9 +62,9 @@ def main(state_dict_path):
                 inputs_embeds=inputs_embeds,
                 attention_mask=attention_mask,
                 max_length=128,
-                num_beams=2,
+                num_beams=1,
                 repetition_penalty=1.2,
-                early_stopping=True
+                early_stopping=True,
             )
 
             pred_texts = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)

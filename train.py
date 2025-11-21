@@ -41,7 +41,51 @@ def run_validation(model, val_loader, device):
     return total_val_loss / len(val_loader)
 
 
-def train(model_output_dir: os.PathLike):
+def freeze_model_layers(model, last_layers_to_train=1):
+    """
+    Freezes all layers except the classification head and the last N transformer layers.
+    """
+    print(f"\n--- Fine-tune Mode: Freezing early layers ---")
+    
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # 2. Detect the deepest layer index
+    max_layer_idx = -1
+    for name, _ in model.named_parameters():
+        parts = name.split('.')
+        for part in parts:
+            if part.isdigit():
+                idx = int(part)
+                if idx > max_layer_idx:
+                    max_layer_idx = idx
+    
+    print(f"Detected max layer index: {max_layer_idx}")
+
+    # Unfreeze Head and Last N layers
+    trainable_count = 0
+    for name, param in model.named_parameters():
+        should_train = False
+        
+        # Always train prediction heads/classifiers
+        if any(keyword in name for keyword in ['classifier', 'head', 'output', 'linear', 'projector']):
+            should_train = True
+            
+        if max_layer_idx != -1:
+            parts = name.split('.')
+            for part in parts:
+                if part.isdigit() and int(part) > (max_layer_idx - last_layers_to_train):
+                    should_train = True
+                    break
+        
+        if should_train:
+            param.requires_grad = True
+            trainable_count += 1
+
+    print(f"Unfrozen {trainable_count} parameter groups (Heads + Last {last_layers_to_train} layers).")
+
+
+def train(model_output_dir: os.PathLike, finetune: bool = False):
     """Main training and validation loop."""
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,6 +93,9 @@ def train(model_output_dir: os.PathLike):
 
     model, tokenizer = build_model()
     model.to(device)
+
+    if finetune:
+        freeze_model_layers(model, last_layers_to_train=2)
 
     data_collator = DataCollator(tokenizer=tokenizer)
 
@@ -76,7 +123,9 @@ def train(model_output_dir: os.PathLike):
 
     print(f"Total training steps per epoch: {len(train_loader)}")
 
-    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+    # Important: Filter parameters so optimizer only sees trainable ones
+    optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE)
+    
     num_training_steps = NUM_EPOCHS * len(train_loader)
     lr_scheduler = get_scheduler(
         name="linear",
@@ -169,7 +218,13 @@ if __name__ == "__main__":
         default="./brain_model_v1",
         help="Directory to save the trained model and tokenizer.",
     )
-    args = parser.parse_args()
-    model_output_dir = args.output_dir
+
+    parser.add_argument(
+        "--finetune",
+        action="store_true",
+        help="If set, only train the last layer and the head.",
+    )
     
-    train(model_output_dir=model_output_dir)
+    args = parser.parse_args()
+    
+    train(model_output_dir=args.output_dir, finetune=args.finetune)
