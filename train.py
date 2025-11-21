@@ -10,11 +10,10 @@ from tqdm.auto import tqdm
 from model import build_model
 
 from dataset import DataCollator, get_brain_dataset
+from utils import DATA_ROOT
 
 # --- Configuration ---
-DATA_ROOT = "/home/mkeller/data/brain-to-text"
-MODEL_OUTPUT_DIR = "./brain_model_v1"
-NUM_EPOCHS = 5
+NUM_EPOCHS = 1
 BATCH_SIZE = 8
 LEARNING_RATE = 5e-5
 # ---------------------
@@ -42,7 +41,7 @@ def run_validation(model, val_loader, device):
     return total_val_loss / len(val_loader)
 
 
-def train():
+def train(model_output_dir: os.PathLike):
     """Main training and validation loop."""
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -89,7 +88,7 @@ def train():
     best_val_loss = float("inf")
     training_stats = []
 
-    os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(model_output_dir, exist_ok=True)
 
     for epoch in range(NUM_EPOCHS):
         print(f"\n--- Epoch {epoch+1}/{NUM_EPOCHS} ---")
@@ -145,21 +144,32 @@ def train():
         if val_loader and avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             print("New best val loss. Saving model...")
-            model.save_pretrained(MODEL_OUTPUT_DIR)
-            tokenizer.save_pretrained(MODEL_OUTPUT_DIR)
+            model.save_pretrained(model_output_dir)
+            tokenizer.save_pretrained(model_output_dir)
         elif not val_loader:
             print("Saving model checkpoint...")
-            model.save_pretrained(MODEL_OUTPUT_DIR)
-            tokenizer.save_pretrained(MODEL_OUTPUT_DIR)
+            model.save_pretrained(model_output_dir)
+            tokenizer.save_pretrained(model_output_dir)
 
-        with open(os.path.join(MODEL_OUTPUT_DIR, "training_stats.json"), "w") as f:
+        with open(os.path.join(model_output_dir, "training_stats.json"), "w") as f:
             json.dump(training_stats, f, indent=2)
 
     print("\n--- Training complete! ---")
     if val_loader:
         print(f"Best validation loss: {best_val_loss:.4f}")
-    print(f"Model and stats saved to {MODEL_OUTPUT_DIR}")
+    print(f"Model and stats saved to {model_output_dir}")
 
 
 if __name__ == "__main__":
-    train()
+    import argparse
+    parser = argparse.ArgumentParser(description="Train the brain transcription model.")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="./brain_model_v1",
+        help="Directory to save the trained model and tokenizer.",
+    )
+    args = parser.parse_args()
+    model_output_dir = args.output_dir
+    
+    train(model_output_dir=model_output_dir)

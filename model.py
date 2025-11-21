@@ -3,6 +3,7 @@ import torch
 import h5py
 import numpy as np
 
+from pathlib import Path
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
@@ -13,6 +14,7 @@ from transformers import (
     AutoModelForCausalLM,
     EncoderDecoderModel,
 )
+from safetensors.torch import load_file
 
 from dataset import DataCollator, H5BrainDataset
 
@@ -87,7 +89,7 @@ class NeuralFeatureEncoder(nn.Module):
         return embeddings
 
 
-def build_model():
+def build_model(state_dict_path: Path = None):
     """
     Initializes the Encoder-Decoder model.
 
@@ -124,6 +126,40 @@ def build_model():
     print("Model built successfully!")
     print(f"  Encoder: {encoder.config.model_type}")
     print(f"  Decoder: {decoder.config.model_type}")
+
+    if state_dict_path is not None:
+        path_obj = Path(state_dict_path)
+        
+        if path_obj.is_dir():
+            safetensors_file = path_obj / "model.safetensors"
+            pytorch_bin_file = path_obj / "pytorch_model.bin"
+            
+            if safetensors_file.exists():
+                path_obj = safetensors_file
+            elif pytorch_bin_file.exists():
+                path_obj = pytorch_bin_file
+            else:
+                print(f"Warning: No model file found in directory {path_obj}")
+                return model, tokenizer
+
+        if path_obj.exists():
+            print(f"Loading model state dict from {path_obj}")
+            
+            if path_obj.suffix == ".safetensors":
+                state_dict = load_file(path_obj)
+            else:
+                state_dict = torch.load(path_obj, map_location="cpu")
+                    
+            if "decoder.lm_head.weight" not in state_dict:
+                print("Restoring tied weights for decoder.lm_head.weight...")
+                if "decoder.transformer.wte.weight" in state_dict:
+                    state_dict["decoder.lm_head.weight"] = state_dict["decoder.transformer.wte.weight"]
+
+            keys = model.load_state_dict(state_dict, strict=True) 
+            print(f"Weights loaded")
+        else:
+            print(f"Warning: File {path_obj} does not exist. Skipping loading.")
+
 
     return model, tokenizer
 
